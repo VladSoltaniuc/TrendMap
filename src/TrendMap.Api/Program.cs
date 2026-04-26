@@ -21,6 +21,17 @@ builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
 
 var app = builder.Build();
 
+app.UseExceptionHandler(exApp => exApp.Run(async ctx =>
+{
+    var ex = ctx.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()?.Error;
+    ctx.Response.StatusCode = 500;
+    ctx.Response.ContentType = "application/json";
+    await ctx.Response.WriteAsJsonAsync(new
+    {
+        error = ex != null ? $"{ex.GetType().Name}: {ex.Message}" : "Unknown error"
+    });
+}));
+
 app.UseCors();
 app.UseDefaultFiles();
 app.UseStaticFiles();
