@@ -14,55 +14,61 @@ builder.Services.Configure<JsonOptions>(o =>
     o.SerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
 });
 
-builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
-    .AllowAnyOrigin()
-    .AllowAnyHeader()
-    .AllowAnyMethod()));
+builder.Services.AddCors(o =>
+    o.AddDefaultPolicy(p => p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod())
+);
 
 var app = builder.Build();
 
 app.UseCors();
 
-app.UseExceptionHandler(exApp => exApp.Run(async ctx =>
-{
-    var ex = ctx.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()?.Error;
-    ctx.Response.StatusCode = 500;
-    ctx.Response.ContentType = "application/json";
-    ctx.Response.Headers["Access-Control-Allow-Origin"] = "*";
-    await ctx.Response.WriteAsJsonAsync(new
+app.UseExceptionHandler(exApp =>
+    exApp.Run(async ctx =>
     {
-        error = ex != null ? $"{ex.GetType().Name}: {ex.Message}" : "Unknown error"
-    });
-}));
+        var ex = ctx
+            .Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()
+            ?.Error;
+        ctx.Response.StatusCode = 500;
+        ctx.Response.ContentType = "application/json";
+        ctx.Response.Headers["Access-Control-Allow-Origin"] = "*";
+        await ctx.Response.WriteAsJsonAsync(
+            new { error = ex != null ? $"{ex.GetType().Name}: {ex.Message}" : "Unknown error" }
+        );
+    })
+);
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok" }));
 
-app.MapPost("/api/trends", async (TrendRequest req, TrendsService svc, CancellationToken ct) =>
-{
-    try
+app.MapPost(
+    "/api/trends",
+    async (TrendRequest req, TrendsService svc, CancellationToken ct) =>
     {
-        var result = await svc.GetAsync(req, ct);
-        return Results.Ok(result);
+        return Results.Ok("A mers de tes");
+        // try
+        // {
+        //     var result = await svc.GetAsync(req, ct);
+        //     return Results.Ok(result);
+        // }
+        // catch (ArgumentException ex)
+        // {
+        //     return Results.BadRequest(new { error = ex.Message });
+        // }
+        // catch (TimeoutException ex)
+        // {
+        //     return Results.Json(new { error = ex.Message }, statusCode: 504);
+        // }
+        // catch (InvalidOperationException ex)
+        // {
+        //     return Results.Json(new { error = ex.Message }, statusCode: 502);
+        // }
+        // catch (Exception ex)
+        // {
+        //     return Results.Json(new { error = $"Unexpected error: {ex.GetType().Name}: {ex.Message}" }, statusCode: 500);
+        // }
     }
-    catch (ArgumentException ex)
-    {
-        return Results.BadRequest(new { error = ex.Message });
-    }
-    catch (TimeoutException ex)
-    {
-        return Results.Json(new { error = ex.Message }, statusCode: 504);
-    }
-    catch (InvalidOperationException ex)
-    {
-        return Results.Json(new { error = ex.Message }, statusCode: 502);
-    }
-    catch (Exception ex)
-    {
-        return Results.Json(new { error = $"Unexpected error: {ex.GetType().Name}: {ex.Message}" }, statusCode: 500);
-    }
-});
+);
 
 // SPA fallback — serve index.html for any non-API route.
 app.MapFallback(async ctx =>
