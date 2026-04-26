@@ -63,6 +63,39 @@ public sealed class PyTrendsClient : ITrendsClient
         if (!File.Exists(_scriptPath))
             throw new InvalidOperationException($"Python script not found at {_scriptPath}");
 
+        var (exitCode, stdout, stderr) = await RunScriptAsync(keyword, geo, timeframe, ct);
+
+        ThrowForScriptError(exitCode, stdout, stderr);
+
+        PyTrendsDto dto;
+        try
+        {
+            dto = JsonSerializer.Deserialize<PyTrendsDto>(stdout, JsonOpts)
+                  ?? throw new InvalidOperationException("Empty response from pytrends script.");
+        }
+        catch (JsonException ex)
+        {
+            _log.LogError(ex, "Failed to parse pytrends output. stdout={Json} stderr={Err}", stdout, stderr);
+            throw new InvalidOperationException($"Invalid JSON from pytrends script: {ex.Message}");
+        }
+
+        if (dto.Error is not null)
+            throw new InvalidOperationException(dto.Error);
+
+        var points = dto.Points!
+            .Select(p => new TrendPoint(DateOnly.Parse(p.Date, System.Globalization.CultureInfo.InvariantCulture), p.Value))
+            .OrderBy(p => p.Date)
+            .ToList();
+
+        if (points.Count == 0)
+            throw new InvalidOperationException($"No trends data returned for '{keyword}' in '{geo}'.");
+
+        return new PyTrendsResult(keyword, geo, timeframe, points);
+    }
+
+    private async Task<(int ExitCode, string Stdout, string Stderr)> RunScriptAsync(
+        string keyword, string geo, string timeframe, CancellationToken ct)
+    {
         var psi = new ProcessStartInfo
         {
             FileName = _python,
@@ -71,20 +104,17 @@ public sealed class PyTrendsClient : ITrendsClient
             UseShellExecute = false,
             CreateNoWindow = true,
         };
-        psi.ArgumentList.Add("-u"); // unbuffered stdout/stderr
+        psi.ArgumentList.Add("-u");
         psi.ArgumentList.Add(_scriptPath);
-        psi.ArgumentList.Add("--keyword");
-        psi.ArgumentList.Add(keyword);
-        psi.ArgumentList.Add("--geo");
-        psi.ArgumentList.Add(geo);
-        psi.ArgumentList.Add("--timeframe");
-        psi.ArgumentList.Add(timeframe);
+        psi.ArgumentList.Add("--keyword"); psi.ArgumentList.Add(keyword);
+        psi.ArgumentList.Add("--geo");     psi.ArgumentList.Add(geo);
+        psi.ArgumentList.Add("--timeframe"); psi.ArgumentList.Add(timeframe);
 
         using var proc = new Process { StartInfo = psi };
         var stdout = new StringBuilder();
         var stderr = new StringBuilder();
         proc.OutputDataReceived += (_, e) => { if (e.Data != null) stdout.AppendLine(e.Data); };
-        proc.ErrorDataReceived += (_, e) => { if (e.Data != null) stderr.AppendLine(e.Data); };
+        proc.ErrorDataReceived  += (_, e) => { if (e.Data != null) stderr.AppendLine(e.Data); };
 
         proc.Start();
         proc.BeginOutputReadLine();
@@ -92,56 +122,32 @@ public sealed class PyTrendsClient : ITrendsClient
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(TimeSpan.FromSeconds(45));
-
         try
         {
             await proc.WaitForExitAsync(timeoutCts.Token);
         }
         catch (OperationCanceledException)
         {
-            try { proc.Kill(true); } catch { }
+            try { proc.Kill(true); } catch (Exception ex) { _log.LogWarning(ex, "Failed to kill timed-out pytrends process."); }
             throw new TimeoutException("Google Trends fetch timed out (45s).");
         }
 
-        if (proc.ExitCode != 0)
+        return (proc.ExitCode, stdout.ToString().Trim(), stderr.ToString().Trim());
+    }
+
+    private void ThrowForScriptError(int exitCode, string stdout, string stderr)
+    {
+        if (exitCode != 0)
         {
-            var err = stderr.ToString().Trim();
-            _log.LogWarning("pytrends script failed: {Err}", err);
-            throw new InvalidOperationException($"Trends fetch failed: {err}");
+            _log.LogWarning("pytrends script failed: {Err}", stderr);
+            if (stderr.StartsWith("No data for keyword", StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException(stderr);
+            throw new InvalidOperationException($"Trends fetch failed: {stderr}");
         }
 
-        var json = stdout.ToString().Trim();
-        if (string.IsNullOrEmpty(json))
-        {
-            var err = stderr.ToString().Trim();
+        if (string.IsNullOrEmpty(stdout))
             throw new InvalidOperationException(
-                string.IsNullOrEmpty(err) ? "No output from pytrends script." : $"pytrends error: {err}");
-        }
-
-        PyTrendsDto dto;
-        try
-        {
-            dto = JsonSerializer.Deserialize<PyTrendsDto>(json, JsonOpts)
-                  ?? throw new InvalidOperationException("Empty response from pytrends script.");
-        }
-        catch (JsonException ex)
-        {
-            _log.LogError("Failed to parse pytrends output. stdout={Json} stderr={Err}", json, stderr.ToString());
-            throw new InvalidOperationException($"Invalid JSON from pytrends script: {ex.Message}");
-        }
-
-        if (dto.Error is not null)
-            throw new InvalidOperationException(dto.Error);
-
-        var points = dto.Points!
-            .Select(p => new TrendPoint(DateOnly.Parse(p.Date), p.Value))
-            .OrderBy(p => p.Date)
-            .ToList();
-
-        if (points.Count == 0)
-            throw new InvalidOperationException($"No trends data returned for '{keyword}' in '{geo}'.");
-
-        return new PyTrendsResult(keyword, geo, timeframe, points);
+                string.IsNullOrEmpty(stderr) ? "No output from pytrends script." : $"pytrends error: {stderr}");
     }
 
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
