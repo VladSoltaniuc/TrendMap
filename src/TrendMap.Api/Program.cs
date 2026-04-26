@@ -41,34 +41,30 @@ app.UseStaticFiles();
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok" }));
 
-app.MapPost(
-    "/api/trends",
-    async (TrendRequest req, TrendsService svc, CancellationToken ct) =>
+app.MapPost("/api/trends", async (TrendRequest req, TrendsService svc, CancellationToken ct) =>
+{
+    try
     {
-        return Results.Ok("A mers de tes");
-        // try
-        // {
-        //     var result = await svc.GetAsync(req, ct);
-        //     return Results.Ok(result);
-        // }
-        // catch (ArgumentException ex)
-        // {
-        //     return Results.BadRequest(new { error = ex.Message });
-        // }
-        // catch (TimeoutException ex)
-        // {
-        //     return Results.Json(new { error = ex.Message }, statusCode: 504);
-        // }
-        // catch (InvalidOperationException ex)
-        // {
-        //     return Results.Json(new { error = ex.Message }, statusCode: 502);
-        // }
-        // catch (Exception ex)
-        // {
-        //     return Results.Json(new { error = $"Unexpected error: {ex.GetType().Name}: {ex.Message}" }, statusCode: 500);
-        // }
+        var result = await svc.GetAsync(req, ct);
+        return Results.Ok(result);
     }
-);
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (TimeoutException ex)
+    {
+        return Results.Json(new { error = ex.Message }, statusCode: 504);
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Json(new { error = ex.Message }, statusCode: 502);
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new { error = $"{ex.GetType().Name}: {ex.Message}" }, statusCode: 500);
+    }
+});
 
 // SPA fallback — serve index.html for any non-API route.
 app.MapFallback(async ctx =>
