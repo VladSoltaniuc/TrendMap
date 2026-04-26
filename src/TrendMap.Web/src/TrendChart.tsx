@@ -6,7 +6,6 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Area,
   ComposedChart,
 } from "recharts";
 import type { TrendResponse } from "./api";
@@ -19,9 +18,6 @@ interface MergedRow {
   date: string;
   historical?: number;
   forecast?: number;
-  lower?: number;
-  upper?: number;
-  band?: [number, number];
 }
 
 export function TrendChart({ data }: Props) {
@@ -30,23 +26,16 @@ export function TrendChart({ data }: Props) {
     for (const p of data.historical) {
       map.set(p.date, { date: p.date, historical: p.value });
     }
-    // Bridge: duplicate the last historical point as the first forecast point
-    // so the dotted line visually connects to the solid line.
+    // Bridge: duplicate last historical point as first forecast so lines connect
     const lastHist = data.historical[data.historical.length - 1];
     if (lastHist) {
       const existing = map.get(lastHist.date) ?? { date: lastHist.date };
       existing.forecast = lastHist.value;
-      existing.lower = lastHist.value;
-      existing.upper = lastHist.value;
-      existing.band = [lastHist.value, lastHist.value];
       map.set(lastHist.date, existing);
     }
     for (const p of data.forecast) {
       const existing = map.get(p.date) ?? { date: p.date };
       existing.forecast = p.value;
-      existing.lower = p.lowerBound;
-      existing.upper = p.upperBound;
-      existing.band = [p.lowerBound, p.upperBound];
       map.set(p.date, existing);
     }
     return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
@@ -71,15 +60,6 @@ export function TrendChart({ data }: Props) {
               typeof value === "number" ? value.toFixed(1) : value,
               name,
             ]}
-          />
-          <Area
-            type="monotone"
-            dataKey="band"
-            stroke="none"
-            fill="#4f8cff"
-            fillOpacity={0.12}
-            name="95% confidence"
-            isAnimationActive={false}
           />
           <Line
             type="monotone"

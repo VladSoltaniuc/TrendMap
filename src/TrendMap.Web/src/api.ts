@@ -6,8 +6,6 @@ export interface TrendPoint {
 export interface ForecastPoint {
   date: string;
   value: number;
-  lowerBound: number;
-  upperBound: number;
 }
 
 export interface TrendResponse {

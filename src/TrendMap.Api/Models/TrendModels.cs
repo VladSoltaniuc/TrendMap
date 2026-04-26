@@ -4,7 +4,7 @@ public record TrendRequest(string Keyword, string Geo, string? Timeframe);
 
 public record TrendPoint(DateOnly Date, double Value);
 
-public record ForecastPoint(DateOnly Date, double Value, double LowerBound, double UpperBound);
+public record ForecastPoint(DateOnly Date, double Value);
 
 public record TrendResponse(
     string Keyword,
