@@ -75,7 +75,6 @@ export function App() {
           <div className="legend-note">
             <span className="dot solid" /> Historical (Google Trends)
             <span className="dot dashed" /> Forecast (next 12 months)
-            <span className="dot band" /> 95% confidence band
           </div>
         </section>
       )}

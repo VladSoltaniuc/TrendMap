@@ -69,10 +69,16 @@ public sealed class ForecastService
             trend = beta * (level - prev) + (1 - beta) * trend;
         }
 
-        // Reapply seasonal indices
+        // Reapply seasonal indices with damped trend (phi=0.85 prevents amplification blow-up)
+        const double phi = 0.85;
         var result = new double[horizon];
+        double dampSum = 0, phiPow = phi;
         for (int h = 1; h <= horizon; h++)
-            result[h - 1] = (level + trend * h) * si[(n + h - 1) % m];
+        {
+            dampSum += phiPow;
+            phiPow *= phi;
+            result[h - 1] = (level + dampSum * trend) * si[(n + h - 1) % m];
+        }
         return result;
     }
 
@@ -88,9 +94,15 @@ public sealed class ForecastService
             level = alpha * values[i] + (1 - alpha) * (level + trend);
             trend = beta * (level - prev) + (1 - beta) * trend;
         }
+        const double phi = 0.85;
         var result = new double[horizon];
+        double dampSum = 0, phiPow = phi;
         for (int h = 1; h <= horizon; h++)
-            result[h - 1] = level + trend * h;
+        {
+            dampSum += phiPow;
+            phiPow *= phi;
+            result[h - 1] = level + dampSum * trend;
+        }
         return result;
     }
 
@@ -122,7 +134,7 @@ public sealed class ForecastService
         return sumSq / (values.Length - 1);
     }
 
-    private static double Clamp(double v) => Math.Max(0, Math.Min(100, v));
+    private static double Clamp(double v) => Math.Max(0, v);
 
     private static int InferStepDays(IReadOnlyList<TrendPoint> points)
     {

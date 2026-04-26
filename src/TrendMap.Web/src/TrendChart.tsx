@@ -52,7 +52,7 @@ export function TrendChart({ data }: Props) {
             tickFormatter={(d: string) => d.slice(0, 7)}
             minTickGap={48}
           />
-          <YAxis stroke="#9aa0a6" domain={[0, 100]} />
+          <YAxis stroke="#9aa0a6" domain={[0, "auto"]} allowDataOverflow={false} />
           <Tooltip
             contentStyle={{ background: "#16181d", border: "1px solid #2a2d36", borderRadius: 6 }}
             labelStyle={{ color: "#e7e9ee" }}

@@ -31,6 +31,4 @@ export const REGIONS: Region[] = [
 export const TIMEFRAMES = [
   { value: "today 5-y", label: "Past 5 years" },
   { value: "today 12-m", label: "Past 12 months" },
-  { value: "today 3-m", label: "Past 90 days" },
-  { value: "all", label: "Since 2004" },
 ];
