@@ -1,0 +1,16 @@
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+**/.vs/
+**/.vscode/
+**/.idea/
+**/.git/
+**/.gitignore
+**/.dockerignore
+**/Dockerfile
+**/*.md
+**/*.user
+**/*.suo
+**/__pycache__/
+**/*.pyc
