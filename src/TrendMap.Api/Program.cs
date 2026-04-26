@@ -46,6 +46,10 @@ app.MapPost("/api/trends", async (TrendRequest req, TrendsService svc, Cancellat
     {
         return Results.Json(new { error = ex.Message }, statusCode: 502);
     }
+    catch (Exception ex)
+    {
+        return Results.Json(new { error = $"Unexpected error: {ex.GetType().Name}: {ex.Message}" }, statusCode: 500);
+    }
 });
 
 // SPA fallback — serve index.html for any non-API route.

@@ -38,9 +38,7 @@ COPY --from=web-build /web/dist ./wwwroot
 # Tell the .NET app to use the venv's python
 ENV Trends__PythonExecutable=/opt/venv/bin/python
 ENV DOTNET_RUNNING_IN_CONTAINER=true
+ENV ASPNETCORE_URLS=http://+:8080
 
-# Railway injects $PORT at runtime — the entrypoint script reads it.
 EXPOSE 8080
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
+ENTRYPOINT ["dotnet", "TrendMap.Api.dll"]

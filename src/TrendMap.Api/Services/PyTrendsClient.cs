@@ -61,7 +61,7 @@ public sealed class PyTrendsClient : ITrendsClient
     public async Task<PyTrendsResult> FetchAsync(string keyword, string geo, string timeframe, CancellationToken ct)
     {
         if (!File.Exists(_scriptPath))
-            throw new FileNotFoundException($"Python script not found at {_scriptPath}");
+            throw new InvalidOperationException($"Python script not found at {_scriptPath}");
 
         var psi = new ProcessStartInfo
         {
@@ -110,9 +110,25 @@ public sealed class PyTrendsClient : ITrendsClient
             throw new InvalidOperationException($"Trends fetch failed: {err}");
         }
 
-        var json = stdout.ToString();
-        var dto = JsonSerializer.Deserialize<PyTrendsDto>(json, JsonOpts)
+        var json = stdout.ToString().Trim();
+        if (string.IsNullOrEmpty(json))
+        {
+            var err = stderr.ToString().Trim();
+            throw new InvalidOperationException(
+                string.IsNullOrEmpty(err) ? "No output from pytrends script." : $"pytrends error: {err}");
+        }
+
+        PyTrendsDto dto;
+        try
+        {
+            dto = JsonSerializer.Deserialize<PyTrendsDto>(json, JsonOpts)
                   ?? throw new InvalidOperationException("Empty response from pytrends script.");
+        }
+        catch (JsonException ex)
+        {
+            _log.LogError("Failed to parse pytrends output. stdout={Json} stderr={Err}", json, stderr.ToString());
+            throw new InvalidOperationException($"Invalid JSON from pytrends script: {ex.Message}");
+        }
 
         if (dto.Error is not null)
             throw new InvalidOperationException(dto.Error);
