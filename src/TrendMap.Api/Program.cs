@@ -21,18 +21,19 @@ builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
 
 var app = builder.Build();
 
+app.UseCors();
+
 app.UseExceptionHandler(exApp => exApp.Run(async ctx =>
 {
     var ex = ctx.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()?.Error;
     ctx.Response.StatusCode = 500;
     ctx.Response.ContentType = "application/json";
+    ctx.Response.Headers["Access-Control-Allow-Origin"] = "*";
     await ctx.Response.WriteAsJsonAsync(new
     {
         error = ex != null ? $"{ex.GetType().Name}: {ex.Message}" : "Unknown error"
     });
 }));
-
-app.UseCors();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
