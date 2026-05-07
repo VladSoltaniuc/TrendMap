@@ -15,6 +15,7 @@ export interface TrendResponse {
   historical: TrendPoint[];
   forecast: ForecastPoint[];
   fromCache: boolean;
+  isMock: boolean;
 }
 
 export async function fetchTrend(

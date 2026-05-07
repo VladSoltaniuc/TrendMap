@@ -61,9 +61,13 @@ public sealed class TrendsService
             Timeframe: raw.Timeframe,
             Historical: raw.Points,
             Forecast: forecast,
-            FromCache: false);
+            FromCache: false,
+            IsMock: raw.IsMock);
 
-        _cache.Set(cacheKey, response, _cacheTtl);
+        // Don't cache mock data — real data may become available on the next request.
+        if (!raw.IsMock)
+            _cache.Set(cacheKey, response, _cacheTtl);
+
         return response;
     }
 

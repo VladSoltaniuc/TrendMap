@@ -12,10 +12,12 @@ public record TrendResponse(
     string Timeframe,
     IReadOnlyList<TrendPoint> Historical,
     IReadOnlyList<ForecastPoint> Forecast,
-    bool FromCache);
+    bool FromCache,
+    bool IsMock);
 
 public record PyTrendsResult(
     string Keyword,
     string Geo,
     string Timeframe,
-    IReadOnlyList<TrendPoint> Points);
+    IReadOnlyList<TrendPoint> Points,
+    bool IsMock = false);

@@ -70,6 +70,11 @@ export function App() {
             {REGIONS.find((r) => r.code === data.geo)?.name ?? data.geo ?? "Worldwide"} ·{" "}
             {data.timeframe}
             {data.fromCache && <span className="cache-tag">cached</span>}
+            {data.isMock && (
+              <span className="mock-tag" title="Google Trends API is rate-limited. This data is simulated and should not be used for decisions.">
+                ⚠ Rate limited — showing mock data
+              </span>
+            )}
           </div>
           <TrendChart data={data} />
           <div className="legend-note">
