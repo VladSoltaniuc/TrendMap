@@ -5,7 +5,8 @@
       "dotnetRunMessages": true,
       "applicationUrl": "http://localhost:5080",
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "Trends__NodeOptions": "--use-system-ca"
       }
     }
   }

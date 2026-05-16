@@ -24,9 +24,9 @@ public sealed class TrendsOptions
     public string[]? AllowedOrigins { get; set; }
 
     /// <summary>
-    /// Additional <c>NODE_OPTIONS</c> passed to the fetch subprocess. Defaults to
-    /// <c>--use-system-ca</c> so Node (22+) trusts the OS certificate store —
-    /// required behind TLS-inspecting proxies whose root CA is in the system store.
+    /// Additional <c>NODE_OPTIONS</c> passed to the fetch subprocess. Empty by default.
+    /// Set to <c>--use-system-ca</c> (Node 22+) behind TLS-inspecting proxies whose
+    /// root CA is only in the OS trust store.
     /// </summary>
-    public string NodeOptions { get; set; } = "--use-system-ca";
+    public string NodeOptions { get; set; } = "";
 }
