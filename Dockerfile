@@ -41,7 +41,11 @@ COPY --from=scripts-build /scripts/node_modules ./scripts/node_modules
 
 ENV Trends__NodeExecutable=node
 ENV DOTNET_RUNNING_IN_CONTAINER=true
-ENV ASPNETCORE_URLS=http://+:8080
+# ASPNETCORE_URLS is set at runtime by entrypoint.sh from $PORT (Railway-provided)
+# falling back to 8080 for local docker runs.
+
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
 EXPOSE 8080
-ENTRYPOINT ["dotnet", "TrendMap.Api.dll"]
+ENTRYPOINT ["/app/entrypoint.sh"]

@@ -21,7 +21,7 @@ interface Props {
 export function EmptyState({ onPick }: Props) {
   return (
     <div className="empty">
-      <p>Enter a keyword above to fetch its trend history and a 12-month forecast.</p>
+      <p>Enter a keyword above to fetch its trend history and forecast the future.</p>
       <p className="empty-or">— or try an example —</p>
       <div className="chips">
         {EXAMPLES.map((ex) => (
