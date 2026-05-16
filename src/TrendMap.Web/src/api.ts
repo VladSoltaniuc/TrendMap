@@ -18,6 +18,14 @@ export interface TrendResponse {
   isMock: boolean;
 }
 
+interface ProblemDetails {
+  type?: string;
+  title?: string;
+  status?: number;
+  detail?: string;
+  instance?: string;
+}
+
 export async function fetchTrend(
   keyword: string,
   geo: string,
@@ -25,18 +33,21 @@ export async function fetchTrend(
 ): Promise<TrendResponse> {
   const res = await fetch("/api/trends", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({ keyword, geo, timeframe }),
   });
   if (!res.ok) {
-    let msg = `Request failed (${res.status})`;
-    try {
-      const body = await res.json();
-      if (body?.error) msg = body.error;
-    } catch {
-      /* ignore */
-    }
-    throw new Error(msg);
+    throw new Error(await extractErrorMessage(res));
   }
   return res.json();
+}
+
+async function extractErrorMessage(res: Response): Promise<string> {
+  try {
+    const body = (await res.json()) as ProblemDetails & { error?: string };
+    // RFC 7807 ProblemDetails: prefer `detail`, then `title`.
+    return body.detail ?? body.title ?? body.error ?? `Request failed (${res.status})`;
+  } catch {
+    return `Request failed (${res.status})`;
+  }
 }

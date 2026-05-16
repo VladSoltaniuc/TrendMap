@@ -1,4 +1,5 @@
 using TrendMap.Api.Models;
+using static TrendMap.Api.Services.ForecastConstants;
 
 namespace TrendMap.Api.Services;
 
@@ -10,9 +11,10 @@ public sealed class ForecastService
 
     public IReadOnlyList<ForecastPoint> Forecast(IReadOnlyList<TrendPoint> historical, int horizon)
     {
-        if (historical.Count < 4)
+        if (historical.Count < MinHistoricalPoints)
         {
-            _log.LogWarning("Too few points ({Count}) to forecast — returning empty.", historical.Count);
+            _log.LogWarning(
+                "Too few points ({Count}) to forecast — returning empty.", historical.Count);
             return Array.Empty<ForecastPoint>();
         }
 
@@ -20,11 +22,12 @@ public sealed class ForecastService
         int n = values.Length;
         int stepDays = InferStepDays(historical);
 
-        // Annual seasonal period: 52 for weekly data, 12 for monthly
-        int m = stepDays <= 10 ? 52 : stepDays <= 45 ? 12 : 0;
+        int seasonalPeriod = stepDays <= WeeklyMaxStepDays
+            ? WeeklySeasonalPeriod
+            : stepDays <= MonthlyMaxStepDays ? MonthlySeasonalPeriod : 0;
 
-        double[] raw = m > 0 && n >= m
-            ? SeasonalHoltForecast(values, m, horizon)
+        double[] raw = seasonalPeriod > 0 && n >= seasonalPeriod
+            ? SeasonalHoltForecast(values, seasonalPeriod, horizon)
             : HoltForecast(values, horizon);
 
         var lastDate = historical[^1].Date;
@@ -39,7 +42,55 @@ public sealed class ForecastService
     {
         int n = values.Length;
 
-        // Seasonal indices: average ratio of each slot to the overall mean
+        var si = ComputeSeasonalIndices(values, m);
+        var ds = Deseasonalize(values, si, m);
+
+        var (level, trend) = FitHolt(ds);
+
+        var result = new double[horizon];
+        double dampSum = 0, phiPow = DampingPhi;
+        for (int h = 1; h <= horizon; h++)
+        {
+            dampSum += phiPow;
+            phiPow *= DampingPhi;
+            result[h - 1] = (level + dampSum * trend) * si[(n + h - 1) % m];
+        }
+        return result;
+    }
+
+    private static double[] HoltForecast(double[] values, int horizon)
+    {
+        var (level, trend) = FitHolt(values);
+        var result = new double[horizon];
+        double dampSum = 0, phiPow = DampingPhi;
+        for (int h = 1; h <= horizon; h++)
+        {
+            dampSum += phiPow;
+            phiPow *= DampingPhi;
+            result[h - 1] = level + dampSum * trend;
+        }
+        return result;
+    }
+
+    private static (double level, double trend) FitHolt(double[] values)
+    {
+        int n = values.Length;
+        var (alpha, beta) = OptimiseParams(values);
+        double level = values[0];
+        int seedIndex = Math.Min(MinHistoricalPoints, n - 1);
+        double trend = (values[seedIndex] - values[0]) / seedIndex;
+        for (int i = 1; i < n; i++)
+        {
+            double prev = level;
+            level = alpha * values[i] + (1 - alpha) * (level + trend);
+            trend = beta * (level - prev) + (1 - beta) * trend;
+        }
+        return (level, trend);
+    }
+
+    private static double[] ComputeSeasonalIndices(double[] values, int m)
+    {
+        int n = values.Length;
         double mean = values.Average();
         if (mean < 1e-6) mean = 1;
         var siSum = new double[m];
@@ -52,65 +103,23 @@ public sealed class ForecastService
         var si = new double[m];
         for (int s = 0; s < m; s++)
             si[s] = siCount[s] > 0 ? siSum[s] / siCount[s] : 1.0;
+        return si;
+    }
 
-        // Deseasonalize
+    private static double[] Deseasonalize(double[] values, double[] si, int m)
+    {
+        int n = values.Length;
         var ds = new double[n];
         for (int i = 0; i < n; i++)
             ds[i] = si[i % m] > 0.01 ? values[i] / si[i % m] : values[i];
-
-        // Holt's on deseasonalized series
-        var (alpha, beta) = OptimiseParams(ds);
-        double level = ds[0];
-        double trend = (ds[Math.Min(4, n - 1)] - ds[0]) / Math.Min(4, n - 1);
-        for (int i = 1; i < n; i++)
-        {
-            double prev = level;
-            level = alpha * ds[i] + (1 - alpha) * (level + trend);
-            trend = beta * (level - prev) + (1 - beta) * trend;
-        }
-
-        // Reapply seasonal indices with damped trend (phi=0.85 prevents amplification blow-up)
-        const double phi = 0.85;
-        var result = new double[horizon];
-        double dampSum = 0, phiPow = phi;
-        for (int h = 1; h <= horizon; h++)
-        {
-            dampSum += phiPow;
-            phiPow *= phi;
-            result[h - 1] = (level + dampSum * trend) * si[(n + h - 1) % m];
-        }
-        return result;
-    }
-
-    private static double[] HoltForecast(double[] values, int horizon)
-    {
-        int n = values.Length;
-        var (alpha, beta) = OptimiseParams(values);
-        double level = values[0];
-        double trend = (values[Math.Min(4, n - 1)] - values[0]) / Math.Min(4, n - 1);
-        for (int i = 1; i < n; i++)
-        {
-            double prev = level;
-            level = alpha * values[i] + (1 - alpha) * (level + trend);
-            trend = beta * (level - prev) + (1 - beta) * trend;
-        }
-        const double phi = 0.85;
-        var result = new double[horizon];
-        double dampSum = 0, phiPow = phi;
-        for (int h = 1; h <= horizon; h++)
-        {
-            dampSum += phiPow;
-            phiPow *= phi;
-            result[h - 1] = level + dampSum * trend;
-        }
-        return result;
+        return ds;
     }
 
     private static (double alpha, double beta) OptimiseParams(double[] values)
     {
         double bestA = 0.3, bestB = 0.1, bestMse = double.MaxValue;
-        foreach (var a in new[] { 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7 })
-        foreach (var b in new[] { 0.05, 0.1, 0.15, 0.2, 0.3 })
+        foreach (var a in AlphaCandidates)
+        foreach (var b in BetaCandidates)
         {
             double mse = ComputeMse(values, a, b);
             if (mse < bestMse) { bestMse = mse; bestA = a; bestB = b; }
@@ -138,7 +147,7 @@ public sealed class ForecastService
 
     private static int InferStepDays(IReadOnlyList<TrendPoint> points)
     {
-        if (points.Count < 2) return 7;
+        if (points.Count < 2) return FallbackStepDays;
         var diffs = Enumerable.Range(1, points.Count - 1)
             .Select(i => points[i].Date.DayNumber - points[i - 1].Date.DayNumber)
             .OrderBy(x => x)

@@ -1,59 +1,60 @@
-using System.Text.RegularExpressions;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Options;
+using TrendMap.Api.Configuration;
 using TrendMap.Api.Models;
+using TrendMap.Api.Validation;
 
 namespace TrendMap.Api.Services;
 
-public sealed class TrendsService
+public interface ITrendsService
 {
-    private readonly ITrendsClient _client;
+    Task<TrendResponse> GetAsync(TrendRequest req, CancellationToken ct);
+}
+
+public sealed class TrendsService : ITrendsService
+{
+    private readonly ITrendRequestValidator _validator;
+    private readonly ITrendsFetcherClient _client;
     private readonly ForecastService _forecaster;
     private readonly IMemoryCache _cache;
     private readonly TimeSpan _cacheTtl;
+    private readonly ILogger<TrendsService> _log;
 
-    // ISO country/region codes: "US", "GB", "US-NY", "RO", etc.
-    private static readonly Regex GeoPattern =
-        new(@"^[A-Z]{2}(-[A-Z0-9]{1,3})?$", RegexOptions.Compiled);
-
-    // Whitelisted pytrends timeframe formats
-    private static readonly Regex TimeframePattern =
-        new(@"^(today \d{1,2}-[ymYM]|now \d{1,2}-[dDhH]|\d{4}-\d{2}-\d{2} \d{4}-\d{2}-\d{2})$",
-            RegexOptions.Compiled);
-
-    public TrendsService(ITrendsClient client, ForecastService forecaster, IMemoryCache cache, IConfiguration config)
+    public TrendsService(
+        ITrendRequestValidator validator,
+        ITrendsFetcherClient client,
+        ForecastService forecaster,
+        IMemoryCache cache,
+        IOptions<TrendsOptions> options,
+        ILogger<TrendsService> log)
     {
+        _validator = validator;
         _client = client;
         _forecaster = forecaster;
         _cache = cache;
-        var minutes = config.GetValue<int?>("Trends:CacheMinutes") ?? 60;
-        _cacheTtl = TimeSpan.FromMinutes(minutes);
+        _cacheTtl = TimeSpan.FromMinutes(options.Value.CacheMinutes);
+        _log = log;
     }
 
     public async Task<TrendResponse> GetAsync(TrendRequest req, CancellationToken ct)
     {
-        var keyword = StripControl(req.Keyword.Trim());
-        var geo = StripControl((req.Geo ?? "").Trim().ToUpperInvariant());
-        var timeframe = string.IsNullOrWhiteSpace(req.Timeframe) ? "today 5-y" : StripControl(req.Timeframe.Trim());
+        var normalized = _validator.Validate(req);
+        var cacheKey = BuildCacheKey(normalized);
 
-        if (string.IsNullOrWhiteSpace(keyword))
-            throw new ArgumentException("Keyword is required.");
-
-        if (keyword.Length > 200)
-            throw new ArgumentException("Keyword must be 200 characters or fewer.");
-
-        if (geo.Length > 0 && !GeoPattern.IsMatch(geo))
-            throw new ArgumentException("Invalid geo code. Expected an ISO country code such as 'US' or 'US-NY'.");
-
-        if (!TimeframePattern.IsMatch(timeframe))
-            throw new ArgumentException("Invalid timeframe. Use formats like 'today 5-y', 'now 7-d', or 'YYYY-MM-DD YYYY-MM-DD'.");
-
-        var cacheKey = $"trend::{keyword}::{geo}::{timeframe}";
         if (_cache.TryGetValue<TrendResponse>(cacheKey, out var cached) && cached is not null)
+        {
+            _log.LogInformation(
+                "Cache hit for {Keyword}/{Geo}/{Timeframe}",
+                normalized.Keyword, normalized.Geo, normalized.Timeframe);
             return cached with { FromCache = true };
+        }
 
-        var raw = await _client.FetchAsync(keyword, geo, timeframe, ct);
-        var horizon = ComputeHorizon(raw.Points);
-        var forecast = _forecaster.Forecast(raw.Points, horizon);
+        _log.LogInformation(
+            "Cache miss — fetching {Keyword}/{Geo}/{Timeframe}",
+            normalized.Keyword, normalized.Geo, normalized.Timeframe);
+
+        var raw = await _client.FetchAsync(normalized.Keyword, normalized.Geo, normalized.Timeframe, ct);
+        var forecast = _forecaster.Forecast(raw.Points, ComputeHorizon(raw.Points));
 
         var response = new TrendResponse(
             Keyword: raw.Keyword,
@@ -71,14 +72,13 @@ public sealed class TrendsService
         return response;
     }
 
+    private static string BuildCacheKey(NormalizedTrendRequest r) =>
+        $"trend::{r.Keyword}::{r.Geo}::{r.Timeframe}";
+
     private static int ComputeHorizon(IReadOnlyList<TrendPoint> points)
     {
         if (points.Count < 2) return 12;
         var stepDays = points[1].Date.DayNumber - points[0].Date.DayNumber;
-        // 12 months ≈ 365 days
         return Math.Max(4, 365 / Math.Max(stepDays, 1));
     }
-
-    private static string StripControl(string s) =>
-        s.Any(char.IsControl) ? new string(s.Where(c => !char.IsControl(c)).ToArray()) : s;
 }
