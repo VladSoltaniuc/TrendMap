@@ -143,7 +143,9 @@ public sealed class ForecastService
         return sumSq / (values.Length - 1);
     }
 
-    private static double Clamp(double v) => Math.Max(0, v);
+    // Google Trends interest values are normalized to 0–100. Keep forecast
+    // points in the same range so the chart's Y-axis stays stable.
+    private static double Clamp(double v) => Math.Max(0, Math.Min(100, v));
 
     private static int InferStepDays(IReadOnlyList<TrendPoint> points)
     {

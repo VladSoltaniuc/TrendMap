@@ -15,6 +15,22 @@ function parseArgs() {
   return result;
 }
 
+function aggregateByDate(points) {
+  const byDate = new Map();
+  for (const p of points) {
+    const entry = byDate.get(p.date);
+    if (entry) {
+      entry.sum += p.value;
+      entry.count += 1;
+    } else {
+      byDate.set(p.date, { sum: p.value, count: 1 });
+    }
+  }
+  return [...byDate.entries()]
+    .map(([date, { sum, count }]) => ({ date, value: Math.round(sum / count) }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
 function mockPoints(keyword, timeframe) {
   const { startTime, endTime } = timeframeToStartEnd(timeframe);
   const points = [];
@@ -30,13 +46,22 @@ function mockPoints(keyword, timeframe) {
 
 function timeframeToStartEnd(tf) {
   const now = new Date();
-  const match = tf.match(/^today\s+(\d+)-([yYmM])$/);
-  if (match) {
-    const n = parseInt(match[1], 10);
-    const unit = match[2].toLowerCase();
+  const todayMatch = tf.match(/^today\s+(\d+)-([yYmM])$/);
+  if (todayMatch) {
+    const n = parseInt(todayMatch[1], 10);
+    const unit = todayMatch[2].toLowerCase();
     const start = new Date(now);
     if (unit === "y") start.setFullYear(start.getFullYear() - n);
     else start.setMonth(start.getMonth() - n);
+    return { startTime: start, endTime: now };
+  }
+  const nowMatch = tf.match(/^now\s+(\d+)-([dDhH])$/);
+  if (nowMatch) {
+    const n = parseInt(nowMatch[1], 10);
+    const unit = nowMatch[2].toLowerCase();
+    const start = new Date(now);
+    if (unit === "d") start.setDate(start.getDate() - n);
+    else start.setHours(start.getHours() - n);
     return { startTime: start, endTime: now };
   }
   const range = tf.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{4}-\d{2}-\d{2})$/);
@@ -104,7 +129,7 @@ async function main() {
     process.exit(1);
   }
 
-  const points = timeline
+  const rawPoints = timeline
     .filter(p => !p.isPartial)
     .map(p => {
       const d = new Date(parseInt(p.time, 10) * 1000);
@@ -112,6 +137,10 @@ async function main() {
       const value = p.value[0];
       return { date, value };
     });
+
+  // Sub-day timeframes return hourly samples; collapse to daily means so
+  // downstream cadence inference and forecasting see one point per day.
+  const points = aggregateByDate(rawPoints);
 
   process.stdout.write(JSON.stringify({ keyword, geo, timeframe, points }) + "\n");
 }

@@ -64,6 +64,16 @@ public sealed class TrendsFetcherClient : ITrendsFetcherClient
         string keyword, string geo, string timeframe, bool mock, CancellationToken ct)
     {
         var (exitCode, stdout, stderr) = await RunScriptAsync(keyword, geo, timeframe, mock, ct);
+
+        // Upstream "no data" is a stable, cacheable outcome — not an error.
+        if (exitCode != 0 && stderr.StartsWith("No data for keyword", StringComparison.OrdinalIgnoreCase))
+        {
+            _log.LogInformation(
+                "Upstream reports no data for {Keyword}/{Geo}/{Timeframe} — returning empty result.",
+                keyword, geo, timeframe);
+            return new FetcherResult(keyword, geo, timeframe, Array.Empty<TrendPoint>(), IsMock: mock);
+        }
+
         ThrowForScriptError(exitCode, stdout, stderr);
         return ParseResult(keyword, geo, timeframe, stdout, stderr, isMock: mock);
     }
@@ -160,9 +170,8 @@ public sealed class TrendsFetcherClient : ITrendsFetcherClient
             .OrderBy(p => p.Date)
             .ToList();
 
-        if (points.Count == 0)
-            throw new InvalidRequestException($"No trends data returned for '{keyword}' in '{geo}'.");
-
+        // An empty `points` array is a normal (cacheable) outcome: the keyword exists
+        // upstream but had no search volume in the requested window.
         return new FetcherResult(keyword, geo, timeframe, points, isMock);
     }
 

@@ -15,8 +15,11 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px 12px;
+  font-family: inherit;
   font-size: 14px;
+  line-height: 1.4;
   outline: none;
+  width: 100%;
 }
 
 .search input:focus,
@@ -36,6 +39,135 @@
 .search button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* ---------- Ghost-text autocomplete ---------- */
+
+/* The input renders transparently on top of a ghost layer that mirrors the
+   user's typed text invisibly, then appends the suggested completion in
+   muted color. Padding/borders/font must match the input exactly so the
+   completion aligns with the caret. */
+
+.ghost-input {
+  position: relative;
+}
+
+.ghost-surface {
+  position: absolute;
+  inset: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  pointer-events: none;
+  z-index: 0;
+  transition: border-color 120ms ease;
+}
+
+.ghost-input:focus-within .ghost-surface {
+  border-color: var(--accent);
+}
+
+.ghost-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.4;
+  white-space: pre;
+  overflow: hidden;
+  pointer-events: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  z-index: 1;
+}
+
+.ghost-typed {
+  color: transparent;
+}
+
+.ghost-completion {
+  color: var(--muted);
+  opacity: 0.75;
+}
+
+/* Make the input itself transparent so the ghost layer underneath shows
+   through; keep the same padding/font for caret alignment. */
+.ghost-input input {
+  position: relative;
+  z-index: 2;
+  background: transparent !important;
+  border-color: transparent !important;
+}
+
+/* ---------- No-data panel ---------- */
+
+.no-data {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 32px 24px;
+  text-align: center;
+  color: var(--text);
+}
+
+.no-data-icon {
+  width: 44px;
+  height: 44px;
+  color: var(--accent);
+  margin: 0 auto 12px;
+  opacity: 0.85;
+  display: block;
+}
+
+.no-data-title {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+
+.no-data-body {
+  margin: 0 auto 16px;
+  max-width: 460px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.no-data-body strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.no-data-tips {
+  list-style: none;
+  padding: 0;
+  margin: 0 auto;
+  max-width: 380px;
+  text-align: left;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.no-data-tips li {
+  position: relative;
+  padding-left: 18px;
+}
+
+.no-data-tips li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.7em;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.6;
 }
 
 /* ---------- Error banner ---------- */
@@ -98,7 +230,29 @@
 /* ---------- Chart ---------- */
 
 .chart-wrap {
+  position: relative;
   margin: 12px -8px 8px;
+  touch-action: pan-y;
+}
+
+.zoom-reset {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 10;
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.zoom-reset:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .legend-note {
@@ -107,27 +261,41 @@
   gap: 18px;
   font-size: 12px;
   color: var(--muted);
-  margin-top: 8px;
+  margin-top: 12px;
   padding-left: 4px;
+}
+
+.legend-note-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .legend-note .dot {
   display: inline-block;
-  width: 24px;
-  height: 2px;
+  width: 28px;
+  height: 3px;
   vertical-align: middle;
-  margin-right: 6px;
+  flex-shrink: 0;
+  border-radius: 1px;
 }
 
-.legend-note .dot.solid { background: var(--accent); }
+.legend-note .dot.solid {
+  background: var(--accent);
+}
 
+/* Use a real linear-gradient with explicit color stops so the dashes are
+   reliably visible at any rendered size. */
 .legend-note .dot.dashed {
-  background: repeating-linear-gradient(
+  background-image: linear-gradient(
     to right,
-    var(--accent-2) 0 6px,
-    transparent 6px 10px
+    var(--accent-2) 0 8px,
+    transparent 8px 12px,
+    var(--accent-2) 12px 20px,
+    transparent 20px 24px,
+    var(--accent-2) 24px 28px
   );
-  height: 2px;
+  background-color: transparent;
 }
 
 /* ---------- Skeleton ---------- */
@@ -198,5 +366,55 @@
 @media (max-width: 720px) {
   .search {
     grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  /* iOS focus-zoom prevention + 44px tap target. */
+  .search input,
+  .search select,
+  .search button {
+    font-size: 16px;
+    min-height: 44px;
+  }
+
+  .ghost-text {
+    font-size: 16px;
+  }
+
+  .results {
+    padding: 14px;
+    border-radius: 10px;
+  }
+
+  .chart-wrap {
+    margin: 8px -4px 4px;
+  }
+
+  .legend-note {
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 14px;
+    font-size: 13px;
+  }
+
+  .legend-note .dot {
+    width: 32px;
+  }
+
+  .zoom-reset {
+    top: 6px;
+    right: 6px;
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+
+  .empty {
+    padding: 32px 8px;
+  }
+}
+
+@media (max-width: 540px) {
+  .results {
+    padding: 10px;
   }
 }

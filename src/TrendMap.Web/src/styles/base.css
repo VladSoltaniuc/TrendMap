@@ -62,3 +62,32 @@ button {
   color: var(--muted);
   font-size: 14px;
 }
+
+@media (max-width: 720px) {
+  .app {
+    padding: 20px 14px 48px;
+  }
+
+  .header h1 {
+    font-size: 24px;
+  }
+
+  .header h1 .logo {
+    width: 24px;
+    height: 24px;
+  }
+
+  .tagline {
+    margin-bottom: 18px;
+  }
+}
+
+@media (max-width: 540px) {
+  .app {
+    padding: 16px 12px 32px;
+  }
+
+  .header h1 {
+    font-size: 22px;
+  }
+}
