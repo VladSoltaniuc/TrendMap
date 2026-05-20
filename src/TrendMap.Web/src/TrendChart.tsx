@@ -7,7 +7,6 @@ import {
   Tooltip,
   ResponsiveContainer,
   ComposedChart,
-  ReferenceArea,
 } from "recharts";
 import type { TrendResponse } from "./api";
 
@@ -24,11 +23,6 @@ interface MergedRow {
 interface View {
   start: number;
   end: number;
-}
-
-interface DragState {
-  fromIdx: number;
-  toIdx: number;
 }
 
 interface PinchState {
@@ -101,12 +95,10 @@ export function TrendChart({ data }: Props) {
   );
 
   const [view, setView] = useState<View>(fullView);
-  const [drag, setDrag] = useState<DragState | null>(null);
 
   // Reset zoom when the underlying dataset changes (new keyword / timeframe / region).
   useEffect(() => {
     setView(fullView);
-    setDrag(null);
   }, [fullView]);
 
   const isZoomed = view.start !== 0 || view.end !== rows.length - 1;
@@ -135,41 +127,8 @@ export function TrendChart({ data }: Props) {
     return (d: string) => d.slice(0, 4);
   }, [visible]);
 
-  // Drag-to-select via Recharts handlers. Indices passed in are relative to `visible`.
-  const onChartMouseDown = useCallback(
-    (e: { activeTooltipIndex?: number } | null) => {
-      if (!canZoom || !e || typeof e.activeTooltipIndex !== "number") return;
-      const idx = view.start + e.activeTooltipIndex;
-      setDrag({ fromIdx: idx, toIdx: idx });
-    },
-    [canZoom, view.start],
-  );
-
-  const onChartMouseMove = useCallback(
-    (e: { activeTooltipIndex?: number } | null) => {
-      if (!drag || !e || typeof e.activeTooltipIndex !== "number") return;
-      setDrag({ ...drag, toIdx: view.start + e.activeTooltipIndex });
-    },
-    [drag, view.start],
-  );
-
-  const onChartMouseUp = useCallback(() => {
-    if (!drag) return;
-    const lo = Math.max(0, Math.min(drag.fromIdx, drag.toIdx));
-    const hi = Math.min(rows.length - 1, Math.max(drag.fromIdx, drag.toIdx));
-    setDrag(null);
-    if (hi - lo + 1 >= MIN_WINDOW) {
-      setView({ start: lo, end: hi });
-    }
-  }, [drag, rows.length]);
-
-  const onChartMouseLeave = useCallback(() => {
-    setDrag(null);
-  }, []);
-
   const resetZoom = useCallback(() => {
     setView(fullView);
-    setDrag(null);
   }, [fullView]);
 
   // Wheel + pinch are not part of Recharts' API — attach to the wrapper directly.
@@ -264,7 +223,6 @@ export function TrendChart({ data }: Props) {
 
     function onDoubleClick() {
       setView({ start: 0, end: Math.max(0, rows.length - 1) });
-      setDrag(null);
     }
 
     el.addEventListener("wheel", onWheel, { passive: false });
@@ -283,15 +241,6 @@ export function TrendChart({ data }: Props) {
     };
   }, [canZoom, indexAtClientX, rows.length]);
 
-  // Drag overlay coordinates need to be in the *visible* slice's date space.
-  const dragOverlay = useMemo(() => {
-    if (!drag) return null;
-    const lo = Math.max(view.start, Math.min(drag.fromIdx, drag.toIdx));
-    const hi = Math.min(view.end, Math.max(drag.fromIdx, drag.toIdx));
-    if (hi <= lo) return null;
-    return { x1: rows[lo].date, x2: rows[hi].date };
-  }, [drag, rows, view.start, view.end]);
-
   return (
     <div className="chart-wrap" ref={wrapRef}>
       {isZoomed && (
@@ -309,10 +258,6 @@ export function TrendChart({ data }: Props) {
         <ComposedChart
           data={visible}
           margin={{ top: 16, right: 32, left: 16, bottom: 8 }}
-          onMouseDown={onChartMouseDown}
-          onMouseMove={onChartMouseMove}
-          onMouseUp={onChartMouseUp}
-          onMouseLeave={onChartMouseLeave}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="#23262f" />
           <XAxis
@@ -364,15 +309,6 @@ export function TrendChart({ data }: Props) {
             isAnimationActive={false}
             connectNulls={false}
           />
-          {dragOverlay && (
-            <ReferenceArea
-              x1={dragOverlay.x1}
-              x2={dragOverlay.x2}
-              strokeOpacity={0}
-              fill="#4f8cff"
-              fillOpacity={0.15}
-            />
-          )}
         </ComposedChart>
       </ResponsiveContainer>
     </div>

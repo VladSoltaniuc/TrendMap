@@ -33,36 +33,34 @@ export function SearchBar(p: Props) {
   // history is reinforced.
   const liveCompletion = useWordSuggestion(p.keyword, p.recent);
 
-  // Lock the first suggestion that becomes visible — the user only sees one
-  // suggestion per editing session. Typing forward keeps it (as long as it
-  // still prefix-matches); deleting any character releases the lock so a new
-  // suggestion can be picked up.
+  // Keep one suggestion stable while it still completes what's typed, instead
+  // of flickering between dictionary hits on every keystroke. As soon as the
+  // locked word no longer fits (you typed past it), a fresh suggestion takes
+  // over.
   const [lockedCompletion, setLockedCompletion] = useState<string | null>(null);
-  const prevKeywordRef = useRef(p.keyword);
 
-  useEffect(() => {
-    if (p.keyword.length < prevKeywordRef.current.length) {
-      setLockedCompletion(null);
-    }
-    prevKeywordRef.current = p.keyword;
-  }, [p.keyword]);
+  const lockFits =
+    lockedCompletion !== null &&
+    lockedCompletion.length > p.keyword.length &&
+    lockedCompletion.toLowerCase().startsWith(p.keyword.toLowerCase());
 
-  const candidate = lockedCompletion ?? liveCompletion;
+  const candidate = lockFits ? lockedCompletion : liveCompletion;
   const remainder =
     !isSuppressed &&
+    p.keyword.length > 0 &&
     candidate &&
     candidate.length > p.keyword.length &&
     candidate.toLowerCase().startsWith(p.keyword.toLowerCase())
       ? candidate.slice(p.keyword.length)
       : "";
 
-  // Once a completion is actually being shown, capture it so subsequent
-  // keystrokes don't swap it out from under the user.
+  // Lock whatever is currently shown so it stays stable while it matches;
+  // re-lock when the previous one stops fitting and a fresh hit is available.
   useEffect(() => {
-    if (lockedCompletion === null && remainder && liveCompletion) {
+    if (!lockFits && remainder && liveCompletion) {
       setLockedCompletion(liveCompletion);
     }
-  }, [remainder, lockedCompletion, liveCompletion]);
+  }, [lockFits, remainder, liveCompletion]);
 
   function acceptCompletion(): boolean {
     if (!remainder) return false;
@@ -86,9 +84,10 @@ export function SearchBar(p: Props) {
   }
 
   function onFormSubmit(e: FormEvent) {
-    // After a search is fired, suppress the ghost until the user edits the
-    // input. The existing suppressedFor flag clears itself when keyword
-    // length drops below the stored value.
+    // The ghost is purely a visual hint — Enter searches exactly what's typed
+    // and ignores the suggestion. Reset the autocomplete state once the search
+    // fires so it starts fresh next time the user edits the input.
+    setLockedCompletion(null);
     setSuppressedFor(p.keyword);
     p.onSubmit(e);
   }
@@ -100,13 +99,6 @@ export function SearchBar(p: Props) {
       return;
     }
     if (e.key === "ArrowRight" && remainder && caretAtEnd()) {
-      e.preventDefault();
-      acceptCompletion();
-      return;
-    }
-    if (e.key === "Enter" && remainder) {
-      // Accept the completion instead of submitting. The user presses Enter
-      // again to actually run the search.
       e.preventDefault();
       acceptCompletion();
       return;
