@@ -25,11 +25,24 @@ interface View {
   end: number;
 }
 
-interface PinchState {
-  initialDistance: number;
-  initialView: View;
-  centerIndex: number;
-}
+type GestureState =
+  | {
+      // Two-finger pinch: zooms (finger spread) and pans (midpoint movement)
+      // at the same time, anchored on the data point under the start midpoint.
+      kind: "pinch";
+      initialView: View;
+      initialDistance: number;
+      anchorIndex: number;
+    }
+  | {
+      // One-finger horizontal drag: pans the zoomed window left/right.
+      kind: "pan";
+      initialView: View;
+      startX: number;
+      startY: number;
+      decided: boolean;
+      panning: boolean;
+    };
 
 const MIN_WINDOW = 4;
 const ZOOM_STEP = 1.2;
@@ -131,45 +144,45 @@ export function TrendChart({ data }: Props) {
     setView(fullView);
   }, [fullView]);
 
-  // Wheel + pinch are not part of Recharts' API — attach to the wrapper directly.
+  // Wheel + touch zoom/pan are not part of Recharts' API — attach to the wrapper directly.
   const wrapRef = useRef<HTMLDivElement | null>(null);
-  const pinchRef = useRef<PinchState | null>(null);
+  const gestureRef = useRef<GestureState | null>(null);
   const viewRef = useRef(view);
   viewRef.current = view;
+
+  // Fractional position (0–1) of a clientX across the wrapper.
+  const ratioAtClientX = useCallback((clientX: number): number => {
+    const el = wrapRef.current;
+    if (!el) return 0;
+    const rect = el.getBoundingClientRect();
+    const width = rect.width || 1;
+    return Math.min(1, Math.max(0, (clientX - rect.left) / width));
+  }, []);
 
   // Translate a clientX over the wrapper into an index in the *full* rows array,
   // based on the current visible window.
   const indexAtClientX = useCallback(
     (clientX: number): number => {
-      const el = wrapRef.current;
-      if (!el) return viewRef.current.start;
-      const rect = el.getBoundingClientRect();
-      const width = rect.width || 1;
-      const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / width));
       const v = viewRef.current;
       const len = v.end - v.start + 1;
-      return v.start + Math.round(ratio * (len - 1));
+      return v.start + Math.round(ratioAtClientX(clientX) * (len - 1));
     },
-    [],
+    [ratioAtClientX],
   );
 
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
 
-    function clampView(start: number, end: number): View {
+    // Position a window of exactly `len` points (clamped to bounds and
+    // MIN_WINDOW) starting near `start`. Keeps the window size stable when
+    // panning into either edge, instead of shrinking it.
+    function clampWindow(start: number, len: number): View {
       const total = rows.length;
       if (total === 0) return { start: 0, end: 0 };
-      let s = Math.max(0, Math.min(total - 1, start));
-      let e = Math.max(0, Math.min(total - 1, end));
-      if (e - s + 1 < MIN_WINDOW) {
-        // Expand around midpoint to satisfy minimum window.
-        const mid = Math.round((s + e) / 2);
-        s = Math.max(0, mid - Math.floor(MIN_WINDOW / 2));
-        e = Math.min(total - 1, s + MIN_WINDOW - 1);
-        s = Math.max(0, e - MIN_WINDOW + 1);
-      }
-      return { start: s, end: e };
+      const L = Math.max(MIN_WINDOW, Math.min(total, len));
+      const s = Math.max(0, Math.min(total - L, Math.round(start)));
+      return { start: s, end: s + L - 1 };
     }
 
     function onWheel(ev: WheelEvent) {
@@ -184,41 +197,86 @@ export function TrendChart({ data }: Props) {
       if (newLen === len) return;
       // Keep `center` at the same fractional position within the new window.
       const ratio = len > 1 ? (center - v.start) / (len - 1) : 0.5;
-      const newStart = Math.round(center - ratio * (newLen - 1));
-      const newEnd = newStart + newLen - 1;
-      setView(clampView(newStart, newEnd));
+      setView(clampWindow(center - ratio * (newLen - 1), newLen));
     }
 
     function onTouchStart(ev: TouchEvent) {
-      if (!canZoom || ev.touches.length !== 2) return;
-      const [a, b] = [ev.touches[0], ev.touches[1]];
-      const midX = (a.clientX + b.clientX) / 2;
-      pinchRef.current = {
-        initialDistance: touchDistance(a, b),
-        initialView: viewRef.current,
-        centerIndex: indexAtClientX(midX),
-      };
+      if (!canZoom) return;
+      if (ev.touches.length === 2) {
+        const [a, b] = [ev.touches[0], ev.touches[1]];
+        const midX = (a.clientX + b.clientX) / 2;
+        gestureRef.current = {
+          kind: "pinch",
+          initialView: viewRef.current,
+          initialDistance: touchDistance(a, b),
+          anchorIndex: indexAtClientX(midX),
+        };
+      } else if (ev.touches.length === 1) {
+        const v = viewRef.current;
+        const zoomed = v.start > 0 || v.end < rows.length - 1;
+        if (!zoomed) {
+          gestureRef.current = null; // not zoomed → let the page scroll
+          return;
+        }
+        const t = ev.touches[0];
+        gestureRef.current = {
+          kind: "pan",
+          initialView: v,
+          startX: t.clientX,
+          startY: t.clientY,
+          decided: false,
+          panning: false,
+        };
+      }
     }
 
     function onTouchMove(ev: TouchEvent) {
-      const p = pinchRef.current;
-      if (!p || ev.touches.length !== 2) return;
-      ev.preventDefault();
-      const dist = touchDistance(ev.touches[0], ev.touches[1]);
-      if (dist <= 0 || p.initialDistance <= 0) return;
-      const scale = dist / p.initialDistance;
-      const initialLen = p.initialView.end - p.initialView.start + 1;
-      let newLen = Math.round(initialLen / scale);
-      newLen = Math.max(MIN_WINDOW, Math.min(rows.length, newLen));
-      const ratio =
-        initialLen > 1 ? (p.centerIndex - p.initialView.start) / (initialLen - 1) : 0.5;
-      const newStart = Math.round(p.centerIndex - ratio * (newLen - 1));
-      const newEnd = newStart + newLen - 1;
-      setView(clampView(newStart, newEnd));
+      const g = gestureRef.current;
+      if (!g) return;
+
+      if (g.kind === "pinch" && ev.touches.length === 2) {
+        ev.preventDefault();
+        const [a, b] = [ev.touches[0], ev.touches[1]];
+        const dist = touchDistance(a, b);
+        if (dist <= 0 || g.initialDistance <= 0) return;
+        const scale = dist / g.initialDistance;
+        const initialLen = g.initialView.end - g.initialView.start + 1;
+        const newLen = Math.max(MIN_WINDOW, Math.min(rows.length, Math.round(initialLen / scale)));
+        // Anchor the start data point under the *current* midpoint so the
+        // gesture pans (midpoint moves) and zooms (spread changes) together.
+        const midX = (a.clientX + b.clientX) / 2;
+        const ratio = ratioAtClientX(midX);
+        setView(clampWindow(g.anchorIndex - ratio * (newLen - 1), newLen));
+        return;
+      }
+
+      if (g.kind === "pan" && ev.touches.length === 1) {
+        const t = ev.touches[0];
+        const dx = t.clientX - g.startX;
+        const dy = t.clientY - g.startY;
+        if (!g.decided) {
+          // Wait for a deliberate move, then lock to the dominant axis.
+          if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+          g.decided = true;
+          g.panning = Math.abs(dx) > Math.abs(dy);
+        }
+        if (!g.panning) return; // vertical intent → let the browser scroll
+        ev.preventDefault();
+        const width = el ? el.getBoundingClientRect().width || 1 : 1;
+        const len = g.initialView.end - g.initialView.start + 1;
+        // Drag right → reveal earlier data (window moves left).
+        const indexDelta = -Math.round((dx / width) * (len - 1));
+        setView(clampWindow(g.initialView.start + indexDelta, len));
+        return;
+      }
     }
 
     function onTouchEnd(ev: TouchEvent) {
-      if (ev.touches.length < 2) pinchRef.current = null;
+      if (ev.touches.length === 0) {
+        gestureRef.current = null;
+      } else if (gestureRef.current?.kind === "pinch" && ev.touches.length < 2) {
+        gestureRef.current = null;
+      }
     }
 
     function onDoubleClick() {
@@ -239,7 +297,7 @@ export function TrendChart({ data }: Props) {
       el.removeEventListener("touchcancel", onTouchEnd);
       el.removeEventListener("dblclick", onDoubleClick);
     };
-  }, [canZoom, indexAtClientX, rows.length]);
+  }, [canZoom, indexAtClientX, ratioAtClientX, rows.length]);
 
   return (
     <div className="chart-wrap" ref={wrapRef}>
