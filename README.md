@@ -103,30 +103,3 @@ Results are cached in-memory for 60 minutes (configurable in `appsettings.json`)
 ### `GET /api/health`
 
 Returns `{ "status": "ok" }`. Used by Railway healthchecks.
-
----
-
-## Deploying to Railway
-
-1. Push this repo to GitHub.
-2. In Railway, **New Project → Deploy from GitHub** and pick this repo.
-3. Railway sees the `Dockerfile` and `railway.json` and uses them automatically — no extra config needed.
-4. After the first deploy, generate a public domain in the service's **Settings → Networking** tab.
-
-The image bundles .NET 8 runtime + Python 3 + pytrends in one container, listening on `$PORT` (defaults to `8080`).
-
-### Environment variables (optional)
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `Trends__PythonExecutable` | `/opt/venv/bin/python` (in container) | Path to the Python interpreter the API shells out to |
-| `Trends__CacheMinutes` | `60` | How long to cache `(keyword, geo, timeframe)` results |
-| `Trends__DefaultTimeframe` | `today 5-y` | Default if request omits `timeframe` |
-
----
-
-## Notes & limitations
-
-- **Google Trends rate-limits.** `pytrends` hits an unofficial endpoint. Bursts can return HTTP 429; the API surfaces this as a 502 with a clear message. The 60-minute cache is the main mitigation.
-- **Forecast is a model, not magic.** SSA captures level + trend + seasonality from the historical series. Volatile or news-driven topics will have wide confidence bands.
-- **Single keyword by design.** Comparison of multiple keywords is intentionally omitted to keep the UX focused.

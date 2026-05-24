@@ -135,6 +135,8 @@ export function App() {
       )}
 
       {state.kind === "idle" && <EmptyState onPick={applyExample} />}
+
+      <footer className="app-version">v1.2</footer>
     </div>
   );
 }
